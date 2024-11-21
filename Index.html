@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Predicción en Tiempo Real - Clasificación de Flores</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter"></script>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background-color: #1a1a1a;
+            color: white;
+            font-family: Arial, sans-serif;
+        }
+        video {
+            border: 2px solid #ffffff;
+            width: 320px;
+            height: 240px;
+        }
+        #label {
+            font-size: 24px;
+            margin-top: 20px;
+        }
+        #toggleCamera {
+            margin-top: 20px;
+            padding: 10px 20px;
+            font-size: 16px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        #toggleCamera:hover {
+            background-color: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <h1>Predicción en Tiempo Real - Clasificación de Flores</h1>
+    <video id="video" autoplay></video>
+    <div id="label">Esperando...</div>
+    <button id="toggleCamera">Cambiar Cámara</button>
+
+    <script>
+        const modelPath = 'model.json'; // Ruta al modelo de TensorFlow.js
+        let model;
+        const video = document.getElementById('video');
+        const labelDiv = document.getElementById('label');
+        let currentStream;
+
+        // Variables para controlar la frecuencia de predicción
+        let lastPredictionTime = 0;
+        const predictionInterval = 300; // Intervalo de predicción en milisegundos
+
+        // Función para cargar el modelo
+        async function loadModel() {
+            model = await tf.loadLayersModel(modelPath);
+            console.log("Modelo cargado");
+        }
+
+        // Función para configurar la cámara
+        async function setupCamera(constraints) {
+            if (currentStream) {
+                currentStream.getTracks().forEach(track => track.stop());
+            }
+            currentStream = await navigator.mediaDevices.getUserMedia({ video: constraints });
+            video.srcObject = currentStream;
+            return new Promise((resolve) => {
+                video.onloadedmetadata = () => {
+                    resolve(video);
+                };
+            });
+        }
+
+        // Función para hacer predicción en cada frame del video
+        async function predict() {
+            const currentTime = Date.now();
+
+            // Solo hacer la predicción si ha pasado el intervalo
+            if (currentTime - lastPredictionTime >= predictionInterval) {
+                lastPredictionTime = currentTime; // Actualiza el tiempo de la última predicción
+
+                const img = tf.browser.fromPixels(video);
+                const resized = tf.image.resizeBilinear(img, [224, 224]); // Cambiar a 224x224 si tu modelo lo requiere
+                const batched = resized.expandDims(0).div(255.0); // Normalizar la imagen
+
+                const predictions = await model.predict(batched).data();
+                const labelIndex = predictions.indexOf(Math.max(...predictions));
+                const labels = ['Daisy', 'Dandelion', 'Rose', 'Sunflower', 'Tulip']; // Cambia estas etiquetas según tu modelo
+
+                labelDiv.innerText = `Etiqueta Predicha: ${labels[labelIndex]}`;
+
+                img.dispose();
+                resized.dispose();
+                batched.dispose();
+            }
+
+            requestAnimationFrame(predict); // Sigue llamando a la función predict
+        }
+
+        // Función para cambiar entre la cámara frontal y trasera
+        let isFrontCamera = true;
+        async function toggleCamera() {
+            isFrontCamera = !isFrontCamera;
+            const constraints = {
+                facingMode: isFrontCamera ? 'user' : 'environment' // 'user' para cámara frontal, 'environment' para cámara trasera
+            };
+            await setupCamera(constraints);
+            predict();
+        }
+
+        // Inicialización
+        async function main() {
+            await loadModel();
+            await setupCamera({ facingMode: 'user' }); // Inicia con la cámara frontal
+            predict();
+        }
+
+        document.getElementById('toggleCamera').addEventListener('click', toggleCamera);
+        main();
+    </script>
+</body>
+</html>
